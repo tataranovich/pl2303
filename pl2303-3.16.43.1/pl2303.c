@@ -211,6 +211,8 @@ static int pl2303_probe(struct usb_serial *serial,
 {
 	usb_set_serial_data(serial, (void *)id->driver_info);
 
+	printk("pl2303 any baud rate patch\n");
+
 	return 0;
 }
 
