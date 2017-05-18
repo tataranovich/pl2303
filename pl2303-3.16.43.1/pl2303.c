@@ -420,16 +420,14 @@ static void pl2303_encode_baud_rate(struct tty_struct *tty,
 	if (spriv->type->max_baud_rate)
 		baud = min_t(speed_t, baud, spriv->type->max_baud_rate);
 	/*
-	 * Set baud rate to nearest supported value.
-	 *
-	 * NOTE: Baud rate 500k can only be set using divisors.
+	 * Use direct method for supported baud rates, otherwise use divisors.
 	 */
 	baud_sup = pl2303_get_supported_baud_rate(baud);
 
-	if (baud == 500000)
-		baud = pl2303_encode_baud_rate_divisor(buf, baud);
+	if (baud == baud_sup)
+		baud = pl2303_encode_baud_rate_direct(buf, baud);
 	else
-		baud = pl2303_encode_baud_rate_direct(buf, baud_sup);
+		baud = pl2303_encode_baud_rate_divisor(buf, baud);
 
 	/* Save resulting baud rate */
 	tty_encode_baud_rate(tty, baud, baud);
