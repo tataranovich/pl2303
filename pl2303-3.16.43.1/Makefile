@@ -8,9 +8,7 @@ ifeq ($(M),)
 	# For other action we use the current path
 	M=.
 endif
-MODULE_VERSION=0.0.1
 obj-m += pl2303.o
-DKMS_ROOT_PATH=/usr/src/$(MODULE_NAME)-$(MODULE_VERSION)
 EXTRA_CFLAGS=-g
 
 ifeq ($(KERNEL_VERSION),)
