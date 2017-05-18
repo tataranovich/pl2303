@@ -211,6 +211,8 @@ static int pl2303_probe(struct usb_serial *serial,
 {
 	usb_set_serial_data(serial, (void *)id->driver_info);
 
+	printk("pl2303 any baud rate patch\n");
+
 	return 0;
 }
 
@@ -367,21 +369,38 @@ static speed_t pl2303_encode_baud_rate_direct(unsigned char buf[4],
 static speed_t pl2303_encode_baud_rate_divisor(unsigned char buf[4],
 								speed_t baud)
 {
-	unsigned int tmp;
+	unsigned int baseline, mantissa, exponent;
 
 	/*
 	 * Apparently the formula is:
-	 * baudrate = 12M * 32 / (2^buf[1]) / buf[0]
+	 *   baudrate = 12M * 32 / (mantissa * 4^exponent)
+	 * where
+	 *   mantissa = buf[8:0]
+	 *   exponent = buf[11:9]
 	 */
-	tmp = 12000000 * 32 / baud;
+	baseline = 12000000 * 32;
+	mantissa = baseline / baud;
+	if (mantissa == 0)
+		mantissa = 1;	/* Avoid dividing by zero if baud > 32*12M. */
+	exponent = 0;
+	while (mantissa >= 512) {
+		if (exponent < 7) {
+			mantissa >>= 2;	/* divide by 4 */
+			exponent++;
+		} else {
+			/* Exponent is maxed. Trim mantissa and leave. */
+			mantissa = 511;
+			break;
+		}
+	}
+
 	buf[3] = 0x80;
 	buf[2] = 0;
-	buf[1] = (tmp >= 256);
-	while (tmp >= 256) {
-		tmp >>= 2;
-		buf[1] <<= 1;
-	}
-	buf[0] = tmp;
+	buf[1] = exponent << 1 | mantissa >> 8;
+	buf[0] = mantissa & 0xff;
+
+	/* Calculate and return the exact baud rate. */
+	baud = (baseline / mantissa) >> (exponent << 1);
 
 	return baud;
 }
@@ -403,16 +422,14 @@ static void pl2303_encode_baud_rate(struct tty_struct *tty,
 	if (spriv->type->max_baud_rate)
 		baud = min_t(speed_t, baud, spriv->type->max_baud_rate);
 	/*
-	 * Set baud rate to nearest supported value.
-	 *
-	 * NOTE: Baud rate 500k can only be set using divisors.
+	 * Use direct method for supported baud rates, otherwise use divisors.
 	 */
 	baud_sup = pl2303_get_supported_baud_rate(baud);
 
-	if (baud == 500000)
-		baud = pl2303_encode_baud_rate_divisor(buf, baud);
+	if (baud == baud_sup)
+		baud = pl2303_encode_baud_rate_direct(buf, baud);
 	else
-		baud = pl2303_encode_baud_rate_direct(buf, baud_sup);
+		baud = pl2303_encode_baud_rate_divisor(buf, baud);
 
 	/* Save resulting baud rate */
 	tty_encode_baud_rate(tty, baud, baud);
